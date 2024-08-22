@@ -1,0 +1,123 @@
+---
+title: '01'
+output: html_document
+date: "2024-06-17"
+---
+
+#Dependent Variable : WAVE 2
+```{r}
+library(dplyr)
+library(tidyr)
+library(prettyR)
+library(dplyr)
+library(caret)
+library(rpart)
+library(partykit)
+library(prettyR)
+library(dplyr)
+library(caTools) 
+library(randomForest) 
+```
+
+```{r}
+modeldata <- read.csv('modeldata.csv')
+modeldata$OBESITY <- as.factor(modeldata$OBESITY)
+head(modeldata)
+```
+
+
+```{r}
+library(rpart)
+library(caret)
+
+set.seed(19032023)
+
+index <- createDataPartition(modeldata$OBESITY, 
+                             p=0.7,
+                             list=FALSE, 
+                             times = 1
+                          )
+ 
+modeldata.train <- modeldata[index,]
+modeldata.test <- modeldata[-index,]
+
+modeldata.train
+modeldata.test
+```
+
+```{r}
+model.lr <- glm(OBESITY ~ ., data = modeldata.train, family = "binomial")
+
+summary.lr <- summary(model.lr)
+```
+
+```{r}
+print(summary.lr)
+```
+
+```{r}
+odds_ratio <- exp(coef(model.lr)["Intercept"])
+print(odds_ratio)
+conf_int <- exp(confint(model.lr, "InterceptS"))
+print(conf_int)
+```
+
+```{r}
+predicted.prob.lr <- predict(model.lr, modeldata.test, type = "response")
+predicted.obesity.lr <- ifelse(predicted.prob.lr > 0.5, 1, 0)
+
+actual.obesity.lr <- modeldata.test$OBESITY
+conf.matrix.lr <- table(Predicted = predicted.obesity.lr, Actual = actual.obesity.lr)
+
+print(conf.matrix.lr)
+```
+
+```{r}
+confusionMatrix(factor(predicted.obesity.lr), factor(modeldata.test$OBESITY), positive = as.character(1))
+```
+
+
+# Decision Tree
+
+```{r}
+set.seed(123)
+
+model.dt <- ctree(OBESITY ~ ., 
+                              data=modeldata.train)
+plot(model.dt)
+
+```
+
+
+
+```{r}
+
+predictions.dt <- predict(model.dt, modeldata.test)
+
+confusionMatrix(predictions.dt, modeldata.test$OBESITY)
+
+```
+
+
+# Random Forest
+
+```{r}
+
+set.seed(123)
+model.rf <- randomForest(OBESITY ~ ., 
+                              data=modeldata.train, 
+                              importance=TRUE)
+plot(model.rf)
+print(model.rf)
+```
+
+```{r}
+predictions.rf <- predict(model.rf, modeldata.test)
+
+confusionMatrix(predictions.rf, modeldata.test$OBESITY)
+import <- importance(model.rf)
+View(import)
+```
+```{r}
+varImpPlot(model.rf)
+```
