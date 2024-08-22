@@ -1,0 +1,97 @@
+---
+title: "Model 03 t-SNE and k-Means"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+date: "2024-07-22"
+---
+
+#Importing the necessary libraries
+
+```{r}
+library(aricode)
+library(mclust)
+library(FactoMineR)
+library(dplyr)
+library(factoextra)
+library(Rtsne)
+
+```
+
+#Reading the data sourced from Data Preparation file
+
+```{r}
+data <- read.csv('modeldata.csv')
+```
+
+```{r}
+class_col<-ncol(data)
+
+colnames(data)[class_col] <- "class"
+
+data$class <- factor(data$class, level=as.character(sort(unique(data$class))))
+
+levels(data$class)
+
+head(data)
+```
+
+# Splitting target variable in a different dataframe.
+
+```{r}
+penddata <- dplyr::select(data, -class)
+penclass <- data$class
+```
+
+# Applying k-Means on the Original Dataset
+
+
+```{r}
+set.seed(42)
+kmeans_result <- kmeans(penddata, centers = 2, nstart = 25)
+penddata <- penddata %>% mutate(Cluster = kmeans_result$cluster)
+penddata$class <- data$class
+head(penddata)
+
+```
+
+# NMI Score: k-Means on original dataset
+
+```{r}
+penddata$Cluster <- ifelse(penddata$Cluster == 2, 0, 1)
+nmi_value <- NMI(as.factor(penddata$class), as.factor(penddata$Cluster))
+cat("NMI:", nmi_value, "\n")
+```
+
+# Appplying t-SNE on the Original Dataset
+
+```{r}
+tsne_results <- Rtsne(penddata, perplexity = 50, check_duplicates = FALSE, pca = TRUE, theta = 0.2)
+```
+
+```{r}
+tsne_df<-as.data.frame(tsne_results$Y)
+
+tsne_df<- cbind(tsne_df, penclass)
+
+means <- tsne_df %>%
+  group_by(penclass) %>%
+    summarise(mean_V1 = mean(V1),
+              mean_V2 = mean(V2)) 
+```
+
+# Applying k-Means on the t-SNE results
+```{r}
+set.seed(123)
+kmeans_result2 <- kmeans(tsne_df [,1:2], centers = 2, nstart = 25)
+tsne_df <- tsne_df %>% mutate(Cluster = kmeans_result2$cluster)
+head(tsne_df)
+```
+
+```{r}
+tsne_df$Cluster <- ifelse(tsne_df$Cluster == 1, 0, 1)
+nmi_value <- NMI(as.factor(tsne_df$penclass), as.factor(tsne_df$Cluster))
+cat("NMI:", nmi_value, "\n")
+```
+
