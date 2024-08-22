@@ -1,0 +1,224 @@
+---
+title: "Model 04"
+output:
+  word_document: default
+  html_document: default
+date: "2024-07-29"
+---
+
+#Importing the necessary libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(prettyR)
+library(dplyr)
+library(caret)
+library(rpart)
+library(partykit)
+library(prettyR)
+```
+
+# Loading the data file from Wave 2 interviews to calculate the BMI
+
+```{r}
+load("34921-0001-Data.rda")
+
+da34921.0001 <- da34921.0001 %>%
+  mutate(
+         OBESITY = case_when(
+           ((WEIGHT)/(HEIGHT*HEIGHT) * 703) >= 30.000 ~ 1,
+           ((WEIGHT)/(HEIGHT*HEIGHT) * 703) < 30.000 ~ 0
+         )) 
+
+obesity <- da34921.0001 %>% select(ID, OBESITY)
+head(obesity)
+```
+
+# Loading and Processing the Independent Social Network Variables to calculate Bridge from WAVE 1.
+
+```{r}
+
+load("20541-0001-Data.rda")
+load("20541-0004-Data.rda")
+
+
+da20541.0001 <- da20541.0001 %>%
+  select (ID, HEARN_RECODE, GENDER, AGE, RACE_RECODE, ETHGRP, COMBUILD, CONDITNS_6, CONDITNS_7,CONDITNS_4,CONDITNS_1,CONDITNS_5,EXERCISE,NOTEAT, FLTDEP, DEGREE_RECODE, HISPANIC, MARITLST,JOBSTAT_1, PHYSHLTH, MNTLHLTH, ATNDSERV )
+```
+
+```{r}
+names(da20541.0001)[names(da20541.0001) == "CONDITNS_6"] <- "HYPERTENSION"
+names(da20541.0001)[names(da20541.0001) == "CONDITNS_7"] <- "DIABETES"
+names(da20541.0001)[names(da20541.0001) == "CONDITNS_4"] <- "ASTHMA" 
+names(da20541.0001)[names(da20541.0001) == "CONDITNS_1"] <- "ARTHRITIS"
+names(da20541.0001)[names(da20541.0001) == "CONDITNS_5"] <- "STROKE"
+
+da20541.0001 <- da20541.0001 %>%
+  mutate(DEGREE_RECODE = if_else(DEGREE_RECODE == "(-2) don't know", NA, DEGREE_RECODE),
+         HEARN_RECODE = if_else(HEARN_RECODE == "(-2) don't know", NA, HEARN_RECODE),
+         RACE_RECODE = if_else(RACE_RECODE == "(-2) don't know", NA, RACE_RECODE))
+```
+
+```{r}
+head(da20541.0001)
+nrow(da20541.0001)
+```
+
+
+```{r}
+da20541.0004 <- da20541.0004 %>%
+  group_by(ID) %>%
+  filter(n() > 2) %>%
+  ungroup()
+```
+
+```{r}
+da20541.0004 <- da20541.0004 %>%
+  pivot_longer(
+    cols = starts_with("TALKFREQ"),
+    names_to = "TALKFREQ",
+    values_to = "FREQ"
+  )
+
+da20541.0004 <- da20541.0004 %>%
+  group_by(ID) %>%
+  summarize(
+    BRIDGE = if_else(any(FREQ == '(0) have never spoken to each other', na.rm = TRUE), 1, 0),
+    HEALTHDISCUSSIONS = if_else(any(HEALTHTALK == '(3) very likely', na.rm = TRUE), 1, 0),
+    LIVEALONE = if_else(any(LIVEWITH == '(1) yes -- lives in the same household', na.rm = TRUE), 0,1))
+  
+head(da20541.0004)
+```
+
+```{r}
+nrow(da20541.0004)
+```
+
+
+```{r}
+modeldata <- da20541.0001 %>%
+  left_join(da20541.0004, by = "ID")
+
+modeldata <- modeldata %>%
+  left_join(obesity, by = "ID")
+
+modeldata<- na.omit(modeldata)
+modeldata <- modeldata %>% select(-ID)
+
+modeldata$BRIDGE <- as.factor(modeldata$BRIDGE)
+modeldata$HEALTHDISCUSSIONS <- as.factor(modeldata$HEALTHDISCUSSIONS)
+modeldata$LIVEALONE <- as.factor(modeldata$LIVEALONE)
+modeldata$OBESITY <- as.factor(modeldata$OBESITY)
+head(modeldata)
+```
+
+# Creating Data Partition for 70% Training Data and 30% Testing Data
+
+```{r}
+library(rpart)
+library(caret)
+
+set.seed(19032023)
+
+index <- createDataPartition(modeldata$OBESITY, 
+                             p=0.7,
+                             list=FALSE, 
+                             times = 1
+                          )
+ 
+modeldata.train <- modeldata[index,]
+modeldata.test <- modeldata[-index,]
+
+nrow(modeldata.train)
+nrow(modeldata.test)
+```
+# Applying Logistic Regression on to find the association between Bridge and Obesity.
+
+```{r}
+model.lr <- glm(OBESITY ~ ., data = modeldata.train, family = "binomial")
+
+summary.lr <- summary(model.lr)
+```
+
+# p-value for Bridge variable
+
+```{r}
+print(summary.lr)
+```
+# Odds Ratio and 95% Confidence Interval
+
+```{r}
+odds_ratio <- exp(coef(model.lr)["BRIDGE1"])
+print(odds_ratio)
+conf_int <- exp(confint(model.lr, "BRIDGE1"))
+print(conf_int)
+```
+
+```{r}
+predicted.prob.lr <- predict(model.lr, modeldata.test, type = "response")
+predicted.obesity.lr <- ifelse(predicted.prob.lr > 0.5, 1, 0)
+
+actual.obesity.lr <- modeldata.test$OBESITY
+conf.matrix.lr <- table(Predicted = predicted.obesity.lr, Actual = actual.obesity.lr)
+
+print(conf.matrix.lr)
+```
+
+```{r}
+confusionMatrix(factor(predicted.obesity.lr), factor(modeldata.test$OBESITY), positive = as.character(1))
+```
+
+# Decision Tree 
+# Conditional Inference Tree implementation using ctree
+
+```{r}
+set.seed(123)
+
+model.dt <- ctree(OBESITY ~ ., 
+                              data=modeldata.train)
+plot(model.dt)
+
+```
+
+
+
+```{r}
+
+predictions.dt <- predict(model.dt, modeldata.test)
+
+confusionMatrix(predictions.dt, modeldata.test$OBESITY)
+
+```
+
+# Classification and Regression Tree implementation using rpart
+
+```{r}
+rpart.tree <- rpart(OBESITY ~ ., data = modeldata.train, parms  = list(split = "information"))
+rpart.tree
+```
+
+```{r}
+library(rpart.plot)
+
+rpart.plot(
+  rpart.tree,
+  type = 2,              
+  extra = 104,          
+  under = TRUE,         
+  cex = 0.6,            
+  tweak = 1.1,           
+  box.palette = "RdYlGn",
+  compress = TRUE       
+)
+```
+
+```{r}
+library(dplyr)
+
+importances <- varImp(rpart.tree) %>%
+  arrange(desc(Overall))
+
+importances
+```
+
+s
